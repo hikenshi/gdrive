@@ -219,6 +219,7 @@ type UploadStreamArgs struct {
 	ChunkSize   int64
 	Progress    io.Writer
 	Timeout     time.Duration
+	Try         int
 }
 
 func (self *Drive) UploadStream(args UploadStreamArgs) error {
@@ -253,6 +254,10 @@ func (self *Drive) UploadStream(args UploadStreamArgs) error {
 	if err != nil {
 		if isTimeoutError(err) {
 			return fmt.Errorf("Failed to upload file: timeout, no data was transferred for %v", args.Timeout)
+		}else if isBackendOrRateLimitError(err) && (args.Try < MaxErrorRetries) {
+			exponentialBackoffSleep(args.Try)
+			args.Try++
+			return self.UploadStream(args)
 		}
 		return fmt.Errorf("Failed to upload file: %s", err)
 	}
@@ -264,6 +269,11 @@ func (self *Drive) UploadStream(args UploadStreamArgs) error {
 	if args.Share {
 		err = self.shareAnyoneReader(f.Id)
 		if err != nil {
+			if isBackendOrRateLimitError(err) && args.Try < MaxErrorRetries {
+				exponentialBackoffSleep(args.Try)
+				args.Try++
+				return self.UploadStream(args)
+			}
 			return err
 		}
 
