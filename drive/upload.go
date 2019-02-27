@@ -24,6 +24,7 @@ type UploadArgs struct {
 	Delete      bool
 	ChunkSize   int64
 	Timeout     time.Duration
+	Try         int
 }
 
 func (self *Drive) Upload(args UploadArgs) error {
@@ -146,6 +147,11 @@ func (self *Drive) uploadDirectory(args UploadArgs) error {
 func (self *Drive) uploadFile(args UploadArgs) (*drive.File, int64, error) {
 	srcFile, srcFileInfo, err := openFile(args.Path)
 	if err != nil {
+		if isBackendOrRateLimitError(err) && args.Try < MaxErrorRetries {
+			exponentialBackoffSleep(args.Try)
+			args.Try++
+			return self.uploadFile(args)
+		}
 		return nil, 0, err
 	}
 
@@ -188,6 +194,10 @@ func (self *Drive) uploadFile(args UploadArgs) (*drive.File, int64, error) {
 	if err != nil {
 		if isTimeoutError(err) {
 			return nil, 0, fmt.Errorf("Failed to upload file: timeout, no data was transferred for %v", args.Timeout)
+		}else if isBackendOrRateLimitError(err) && (args.Try < MaxErrorRetries) {
+			exponentialBackoffSleep(args.Try)
+			args.Try++
+			return self.uploadFile(args)
 		}
 		return nil, 0, fmt.Errorf("Failed to upload file: %s", err)
 	}
