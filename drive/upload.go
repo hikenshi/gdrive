@@ -36,6 +36,11 @@ func (self *Drive) Upload(args UploadArgs) error {
 	for _, parent := range args.Parents {
 		isSyncDir, err := self.isSyncFile(parent)
 		if err != nil {
+			if isBackendOrRateLimitError(err) && args.Try < MaxErrorRetries {
+				exponentialBackoffSleep(args.Try)
+				args.Try++
+				return self.Upload(args)
+			}
 			return err
 		}
 
@@ -50,6 +55,11 @@ func (self *Drive) Upload(args UploadArgs) error {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
+		if isBackendOrRateLimitError(err) && args.Try < MaxErrorRetries {
+			exponentialBackoffSleep(args.Try)
+			args.Try++
+			return self.Upload(args)
+		}
 		return fmt.Errorf("Failed stat file: %s", err)
 	}
 
@@ -59,6 +69,11 @@ func (self *Drive) Upload(args UploadArgs) error {
 
 	f, rate, err := self.uploadFile(args)
 	if err != nil {
+		if isBackendOrRateLimitError(err) && args.Try < MaxErrorRetries {
+			exponentialBackoffSleep(args.Try)
+			args.Try++
+			return self.Upload(args)
+		}
 		return err
 	}
 	fmt.Fprintf(args.Out, "Uploaded %s at %s/s, total %s\n", f.Id, formatSize(rate, false), formatSize(f.Size, false))
@@ -75,6 +90,11 @@ func (self *Drive) Upload(args UploadArgs) error {
 	if args.Delete {
 		err = os.Remove(args.Path)
 		if err != nil {
+			if isBackendOrRateLimitError(err) && args.Try < MaxErrorRetries {
+				exponentialBackoffSleep(args.Try)
+				args.Try++
+				return self.Upload(args)
+			}
 			return fmt.Errorf("Failed to delete file: %s", err)
 		}
 		fmt.Fprintf(args.Out, "Removed %s\n", args.Path)
